@@ -1,98 +1,79 @@
 import express from 'express';
 import multer from 'multer';
-import { OfflineCompiler } from 'mind-ar/src/image-target/offline-compiler.js';
-import { createCanvas, loadImage } from 'canvas'; // <--- MUDANCA AQUI (loadImage)
-import QRCode from 'qrcode';
-import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { v4 as uuidv4 } from 'uuid';
+import QRCode from 'qrcode';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
-// Configurar uploads
-const upload = multer({ storage: multer.memoryStorage() });
-
+// Configurar pasta pública
 app.use(express.static('public'));
+app.use('/uploads', express.static('uploads'));
 app.use(express.json());
 
-// Criar pasta de uploads se não existir
-const uploadsDir = path.join(__dirname, 'public', 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-}
-
-app.post('/api/create', upload.fields([{ name: 'target' }, { name: 'video' }]), async (req, res) => {
-    try {
-        console.log("1. Pedido recebido");
-        if (!req.files || !req.files['target'] || !req.files['video']) {
-            return res.status(400).json({ error: 'Faltam ficheiros (imagem ou video)' });
+// Configurar Multer para guardar ficheiros
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const uploadPath = path.join(__dirname, 'uploads', req.body.sessionId);
+        if (!fs.existsSync(uploadPath)) {
+            fs.mkdirSync(uploadPath, { recursive: true });
         }
-
-        const targetBuffer = req.files['target'][0].buffer;
-        const videoBuffer = req.files['video'][0].buffer;
-        const experienceId = uuidv4();
-        
-        console.log("2. A carregar imagem...");
-        
-        // --- CORRECAO CRITICA ---
-        // Usamos await loadImage para garantir que a imagem esta carregada
-        // antes de tentarmos ler a largura
-        const img = await loadImage(targetBuffer);
-        
-        console.log(`3. Imagem carregada: ${img.width}x${img.height}`);
-        
-        if (img.width === 0 || img.height === 0) {
-            throw new Error("A imagem tem tamanho 0. Tenta outro ficheiro JPG/PNG.");
+        cb(null, uploadPath);
+    },
+    filename: (req, file, cb) => {
+        // Mantém os nomes fixos para ser fácil encontrar depois
+        if (file.fieldname === 'mindFile') {
+            cb(null, 'targets.mind');
+        } else if (file.fieldname === 'videoFile') {
+            cb(null, 'video.mp4');
+        } else {
+            cb(null, file.originalname);
         }
-
-        const expDir = path.join(uploadsDir, experienceId);
-        fs.mkdirSync(expDir);
-
-        let width = img.width;
-        let height = img.height;
-        
-        // Redimensionar se for gigante (seguranca para RAM)
-        if (width > 800) { // Baixei para 800 para ser mais seguro
-            const scale = 800 / width;
-            width = 800;
-            height = Math.floor(height * scale);
-        }
-
-        const canvas = createCanvas(width, height);
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-        
-        const imageData = ctx.getImageData(0, 0, width, height);
-        const data = new Uint8Array(imageData.data.buffer);
-
-        console.log("4. A iniciar compilador AR...");
-        const compiler = new OfflineCompiler();
-        await compiler.compileImageTargets([data], [width], [height]);
-        const exportedBuffer = compiler.exportData();
-
-        console.log("5. Compilacao terminada. A guardar ficheiros...");
-        fs.writeFileSync(path.join(expDir, 'targets.mind'), Buffer.from(exportedBuffer));
-        fs.writeFileSync(path.join(expDir, 'video.mp4'), videoBuffer);
-        
-        const viewerUrl = `https://${req.get('host')}/viewer.html?id=${experienceId}`;
-        const qrCodeDataUrl = await QRCode.toDataURL(viewerUrl);
-
-        console.log("6. Sucesso!");
-        res.json({
-            success: true,
-            viewerUrl: viewerUrl,
-            qrCode: qrCodeDataUrl
-        });
-
-    } catch (error) {
-        console.error('ERRO FATAL:', error);
-        res.status(500).json({ error: error.message || "Erro desconhecido no servidor" });
     }
+});
+
+const upload = multer.fields([
+    { name: 'mindFile', maxCount: 1 },
+    { name: 'videoFile', maxCount: 1 }
+]);
+
+// Rota principal: Criar Experiência
+app.post('/create-experience', (req, res) => {
+    // 1. Gerar ID único antes do upload
+    const sessionId = uuidv4();
+    req.body.sessionId = sessionId;
+
+    // 2. Processar Upload
+    upload(req, res, async (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+
+        try {
+            if (!req.files['mindFile'] || !req.files['videoFile']) {
+                throw new Error('Faltam ficheiros (.mind ou .mp4)');
+            }
+
+            // 3. Gerar URL e QR Code
+            const deployUrl = `${req.protocol}://${req.get('host')}`;
+            const viewerUrl = `${deployUrl}/viewer.html?id=${sessionId}`;
+            const qrCodeData = await QRCode.toDataURL(viewerUrl);
+
+            res.json({
+                success: true,
+                qrCode: qrCodeData,
+                viewerUrl: viewerUrl
+            });
+
+        } catch (error) {
+            console.error(error);
+            res.status(500).json({ error: error.message });
+        }
+    });
 });
 
 app.listen(port, () => {
