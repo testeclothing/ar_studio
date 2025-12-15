@@ -1,7 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import { OfflineCompiler } from 'mind-ar/src/image-target/offline-compiler.js';
-import { createCanvas, Image } from 'canvas';
+import { createCanvas, loadImage } from 'canvas'; // <--- MUDANCA AQUI (loadImage)
 import QRCode from 'qrcode';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
@@ -28,6 +28,7 @@ if (!fs.existsSync(uploadsDir)) {
 
 app.post('/api/create', upload.fields([{ name: 'target' }, { name: 'video' }]), async (req, res) => {
     try {
+        console.log("1. Pedido recebido");
         if (!req.files || !req.files['target'] || !req.files['video']) {
             return res.status(400).json({ error: 'Faltam ficheiros (imagem ou video)' });
         }
@@ -36,21 +37,29 @@ app.post('/api/create', upload.fields([{ name: 'target' }, { name: 'video' }]), 
         const videoBuffer = req.files['video'][0].buffer;
         const experienceId = uuidv4();
         
-        // Criar pasta para esta experiência
+        console.log("2. A carregar imagem...");
+        
+        // --- CORRECAO CRITICA ---
+        // Usamos await loadImage para garantir que a imagem esta carregada
+        // antes de tentarmos ler a largura
+        const img = await loadImage(targetBuffer);
+        
+        console.log(`3. Imagem carregada: ${img.width}x${img.height}`);
+        
+        if (img.width === 0 || img.height === 0) {
+            throw new Error("A imagem tem tamanho 0. Tenta outro ficheiro JPG/PNG.");
+        }
+
         const expDir = path.join(uploadsDir, experienceId);
         fs.mkdirSync(expDir);
 
-        // 1. Processar Imagem com Canvas (Redimensionar se for gigante)
-        const img = new Image();
-        img.src = targetBuffer;
-        
         let width = img.width;
         let height = img.height;
         
-        // Limite de segurança para não rebentar a memória (Max 1000px)
-        if (width > 1000) {
-            const scale = 1000 / width;
-            width = 1000;
+        // Redimensionar se for gigante (seguranca para RAM)
+        if (width > 800) { // Baixei para 800 para ser mais seguro
+            const scale = 800 / width;
+            width = 800;
             height = Math.floor(height * scale);
         }
 
@@ -58,28 +67,22 @@ app.post('/api/create', upload.fields([{ name: 'target' }, { name: 'video' }]), 
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
         
-        // Obter dados brutos da imagem para o compilador
         const imageData = ctx.getImageData(0, 0, width, height);
         const data = new Uint8Array(imageData.data.buffer);
 
-        // 2. Compilar Target (.mind) usando a biblioteca OFICIAL
-        console.log("A iniciar compilacao...");
+        console.log("4. A iniciar compilador AR...");
         const compiler = new OfflineCompiler();
         await compiler.compileImageTargets([data], [width], [height]);
         const exportedBuffer = compiler.exportData();
 
-        // 3. Guardar ficheiros
+        console.log("5. Compilacao terminada. A guardar ficheiros...");
         fs.writeFileSync(path.join(expDir, 'targets.mind'), Buffer.from(exportedBuffer));
         fs.writeFileSync(path.join(expDir, 'video.mp4'), videoBuffer);
         
-        // Guardar a imagem original para referência (opcional)
-        fs.writeFileSync(path.join(expDir, 'target.jpg'), targetBuffer);
-
-        // 4. Gerar QR Code
-        // URL final onde o utilizador vai ver a experiência
         const viewerUrl = `https://${req.get('host')}/viewer.html?id=${experienceId}`;
         const qrCodeDataUrl = await QRCode.toDataURL(viewerUrl);
 
+        console.log("6. Sucesso!");
         res.json({
             success: true,
             viewerUrl: viewerUrl,
@@ -87,8 +90,8 @@ app.post('/api/create', upload.fields([{ name: 'target' }, { name: 'video' }]), 
         });
 
     } catch (error) {
-        console.error('Erro no servidor:', error);
-        res.status(500).json({ error: error.message });
+        console.error('ERRO FATAL:', error);
+        res.status(500).json({ error: error.message || "Erro desconhecido no servidor" });
     }
 });
 
