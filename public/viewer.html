@@ -1,177 +1,73 @@
 <!DOCTYPE html>
 <html>
-  <head>
+<head>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>WebAR Experience</title>
-    <!-- A-Frame -->
-    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-    <!-- MindAR for A-Frame -->
-    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+    <title>Pet AR Viewer</title>
+    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script>
     <style>
-      body { margin: 0; overflow: hidden; font-family: sans-serif; }
-      
-      /* Start Overlay (iOS requires user interaction to play video) */
-      #overlay {
-        position: fixed;
-        top: 0; left: 0; width: 100%; height: 100%;
-        background: rgba(0, 0, 0, 0.8);
-        z-index: 999;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        flex-direction: column;
-        color: white;
-        text-align: center;
-        transition: opacity 0.5s;
-      }
-      #overlay button {
-        background: white;
-        color: black;
-        border: none;
-        padding: 15px 30px;
-        border-radius: 30px;
-        font-size: 18px;
-        font-weight: bold;
-        cursor: pointer;
-        margin-top: 20px;
-      }
-      
-      /* Loading UI */
-      .scanning-overlay {
-        position: fixed;
-        bottom: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        background: rgba(0, 0, 0, 0.6);
-        color: white;
-        padding: 10px 20px;
-        border-radius: 20px;
-        z-index: 10;
-        pointer-events: none;
-        display: none;
-      }
+        #start-btn {
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+            padding: 15px 30px; background: #2563eb; color: white;
+            border: none; border-radius: 25px; font-size: 18px; font-weight: bold;
+            z-index: 999; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        }
+        .hidden { display: none !important; }
     </style>
-  </head>
-  <body>
-    
-    <!-- UI Overlay -->
-    <div id="overlay">
-      <h1>WebAR Experience</h1>
-      <p>Point your camera at the target image.</p>
-      <button id="start-btn">Start Experience</button>
-    </div>
+</head>
+<body>
+    <div id="start-btn">🔊 Tocar para Iniciar</div>
 
-    <div id="scanning-status" class="scanning-overlay">Scanning...</div>
+    <a-scene mindar-image="" color-space="sRGB" renderer="colorManagement: true, physicallyCorrectLights" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
+        
+        <a-assets>
+            <video id="vid" loop="true" crossorigin="anonymous"></video>
+        </a-assets>
 
-    <!-- Scene -->
-    <!-- We set autoStart: false initially to wait for user interaction -->
-    <a-scene 
-      mindar-image="imageTargetSrc: ; autoStart: false; uiLoading: no; uiError: yes; uiScanning: no;" 
-      color-space="sRGB" 
-      renderer="colorManagement: true, physicallyCorrectLights" 
-      vr-mode-ui="enabled: false" 
-      device-orientation-permission-ui="enabled: false">
-      
-      <a-assets>
-        <!-- The video element -->
-        <video 
-          id="video-asset" 
-          preload="auto" 
-          loop="true" 
-          crossorigin="anonymous"
-          playsinline
-          webkit-playsinline>
-        </video>
-      </a-assets>
+        <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
-
-      <!-- Target -->
-      <a-entity id="target-entity" mindar-image-target="targetIndex: 0">
-        <a-plane 
-          id="video-plane"
-          src="#video-asset" 
-          position="0 0 0" 
-          height="1" 
-          width="1" 
-          rotation="0 0 0" 
-          opacity="0"
-          transparent="true">
-        </a-plane>
-      </a-entity>
+        <a-entity id="target-entity" mindar-image-target="targetIndex: 0">
+            <a-video src="#vid" position="0 0 0" height="1" width="1" rotation="0 0 0"></a-video>
+        </a-entity>
     </a-scene>
 
     <script>
-      document.addEventListener("DOMContentLoaded", function() {
         const urlParams = new URLSearchParams(window.location.search);
         const id = urlParams.get('id');
-        const ext = urlParams.get('ext') || 'mp4';
 
         if (!id) {
-          alert('No Experience ID provided.');
-          return;
+            alert("Erro: ID da experiência não encontrado.");
+        } else {
+            const mindFileUrl = `/uploads/${id}/targets.mind`;
+            const videoUrl = `/uploads/${id}/video.mp4`;
+
+            const scene = document.querySelector('a-scene');
+            const video = document.querySelector('#vid');
+            
+            // Configurar a cena com os ficheiros dinâmicos
+            scene.setAttribute('mindar-image', `imageTargetSrc: ${mindFileUrl}; filterMinCF:0.0001; filterBeta: 0.001;`);
+            video.src = videoUrl;
+
+            const startBtn = document.getElementById('start-btn');
+            
+            startBtn.addEventListener('click', () => {
+                video.play();
+                video.pause(); 
+                startBtn.classList.add('hidden');
+            });
+
+            const target = document.querySelector('#target-entity');
+            
+            target.addEventListener("targetFound", event => {
+                console.log("Imagem encontrada!");
+                video.play();
+            });
+
+            target.addEventListener("targetLost", event => {
+                console.log("Imagem perdida...");
+                video.pause();
+            });
         }
-
-        const sceneEl = document.querySelector('a-scene');
-        const targetEntity = document.querySelector('#target-entity');
-        const videoAsset = document.querySelector('#video-asset');
-        const videoPlane = document.querySelector('#video-plane');
-        const startBtn = document.querySelector('#start-btn');
-        const overlay = document.querySelector('#overlay');
-        const status = document.querySelector('#scanning-status');
-
-        // Construct paths
-        const mindPath = `/uploads/${id}/targets.mind`;
-        const videoPath = `/uploads/${id}/video.${ext}`;
-
-        // Set attributes dynamically
-        sceneEl.setAttribute('mindar-image', `imageTargetSrc: ${mindPath}; autoStart: false; uiLoading: no; uiError: yes; uiScanning: no;`);
-        videoAsset.setAttribute('src', videoPath);
-
-        // Start Button Logic (iOS requires direct user interaction to enable video playback)
-        startBtn.addEventListener('click', () => {
-          overlay.style.opacity = '0';
-          setTimeout(() => {
-            overlay.style.display = 'none';
-            status.style.display = 'block';
-          }, 500);
-
-          // Initialize video (play then pause to load buffer)
-          videoAsset.play().then(() => {
-            videoAsset.pause();
-          }).catch(e => {
-            console.warn("Autoplay prevented, waiting for target", e);
-          });
-
-          // Start AR Engine
-          sceneEl.systems['mindar-image'].start();
-        });
-
-        // AR Events
-        targetEntity.addEventListener('targetFound', () => {
-          console.log("Target Found");
-          status.innerText = "Target Found";
-          videoPlane.setAttribute('opacity', '1');
-          videoAsset.play();
-        });
-
-        targetEntity.addEventListener('targetLost', () => {
-          console.log("Target Lost");
-          status.innerText = "Scanning...";
-          videoAsset.pause();
-          // Optional: Fade out video or reset
-          // videoAsset.currentTime = 0; 
-        });
-
-        // Video Metadata to adjust aspect ratio if needed
-        videoAsset.addEventListener('loadedmetadata', () => {
-           const ratio = videoAsset.videoHeight / videoAsset.videoWidth;
-           // If the target image aspect ratio is different, you might need to adjust height/width here
-           // For simplicity, we assume 1:1 or handle scaling in A-Frame.
-           // A-Frame plane width=1, so set height to ratio.
-           videoPlane.setAttribute('height', ratio);
-        });
-      });
     </script>
-  </body>
+</body>
 </html>
