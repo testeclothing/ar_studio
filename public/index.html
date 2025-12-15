@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AR Studio</title>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #f0f2f5; }
+        .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #1a1a1a; margin-bottom: 30px; }
+        .upload-group { margin-bottom: 20px; border: 2px dashed #ccc; padding: 20px; border-radius: 8px; text-align: center; transition: 0.3s; }
+        .upload-group:hover { border-color: #6366f1; background: #f8faff; }
+        label { display: block; font-weight: bold; margin-bottom: 10px; color: #4b5563; }
+        input[type="file"] { margin-top: 10px; }
+        button { width: 100%; padding: 15px; background: #6366f1; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        button:hover { background: #4f46e5; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        #result { margin-top: 30px; text-align: center; display: none; }
+        #qr-image { width: 200px; height: 200px; margin: 15px 0; border: 1px solid #ddd; padding: 10px; background: white; border-radius: 8px; }
+        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #6366f1; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; display: inline-block; margin-right: 10px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .link-box { margin-top: 15px; word-break: break-all; color: #6366f1; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>✨ WebAR Studio</h1>
+        <form id="uploadForm">
+            <div class="upload-group">
+                <label>1. Imagem Alvo (Target)</label>
+                <small>Usa uma imagem pequena (JPG/PNG)</small><br>
+                <input type="file" name="target" accept="image/*" required>
+            </div>
+
+            <div class="upload-group">
+                <label>2. Vídeo (Overlay)</label>
+                <small>O vídeo que vai aparecer (MP4)</small><br>
+                <input type="file" name="video" accept="video/mp4" required>
+            </div>
+
+            <button type="submit" id="submitBtn">Gerar Experiência AR</button>
+        </form>
+
+        <div id="loading" style="display:none; text-align:center; margin-top:20px;">
+            <div class="spinner"></div> A processar... (Isto demora uns 30s)
+        </div>
+
+        <div id="result">
+            <h3>✅ Sucesso!</h3>
+            <p>Aponta a câmara para este QR Code:</p>
+            <img id="qr-image" src="" alt="QR Code">
+            <div class="link-box">
+                <a id="viewer-link" href="#" target="_blank">Abrir Link Direto</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('uploadForm');
+        const loading = document.getElementById('loading');
+        const result = document.getElementById('result');
+        const submitBtn = document.getElementById('submitBtn');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            // UI Update
+            submitBtn.disabled = true;
+            submitBtn.innerText = "A Enviar...";
+            loading.style.display = 'block';
+            result.style.display = 'none';
+
+            const formData = new FormData(form);
+
+            try {
+                const response = await fetch('/api/create', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('qr-image').src = data.qrCode;
+                    document.getElementById('viewer-link').href = data.viewerUrl;
+                    document.getElementById('viewer-link').innerText = data.viewerUrl;
+                    result.style.display = 'block';
+                } else {
+                    alert('Erro: ' + (data.error || 'Falha desconhecida'));
+                }
+            } catch (err) {
+                alert('Erro de conexão: ' + err.message);
+            } finally {
+                loading.style.display = 'none';
+                submitBtn.disabled = false;
+                submitBtn.innerText = "Gerar Experiência AR";
+            }
+        });
+    </script>
+</body>
+</html>
