@@ -1,0 +1,7 @@
+{
+  "name": "WebAR Studio",
+  "description": "A full-stack WebAR creation platform using MindAR and A-Frame. Upload target images and video overlays to generate instant AR experiences.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
